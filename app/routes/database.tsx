@@ -1,4 +1,4 @@
-import { Link, useLoaderData, useLocation } from "react-router";
+import { Link, useLoaderData } from "react-router";
 import type { Route } from "./+types/database";
 
 // Define a interface para os dados do schema da tabela
@@ -10,16 +10,72 @@ interface TableSchema {
 }
 
 /**
- * O loader agora também busca o schema e uma amostra de dados da tabela
- * selecionada através de um parâmetro na URL (ex: /database?table=tb_usuario).
+ * Converte um array de objetos em uma string no formato CSV.
+ * @param data O array de objetos a ser convertido.
+ * @returns Uma string formatada em CSV.
  */
+function convertToCSV(data: Record<string, unknown>[]): string {
+  if (!data || data.length === 0) {
+    return "";
+  }
+  const headers = Object.keys(data[0]);
+  const csvRows = [headers.join(",")]; // Linha de cabeçalho
+
+  for (const row of data) {
+    const values = headers.map((header) => {
+      const value = row[header];
+      let stringValue =
+        value === null || value === undefined ? "" : String(value);
+
+      // Escapa aspas duplas e envolve em aspas se o valor contiver vírgula, aspas ou quebra de linha.
+      if (
+        stringValue.includes('"') ||
+        stringValue.includes(",") ||
+        stringValue.includes("\n") ||
+        stringValue.includes("\r")
+      ) {
+        stringValue = `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    });
+    csvRows.push(values.join(","));
+  }
+
+  return csvRows.join("\n");
+}
+
 export async function loader({ request, context }: Route.LoaderArgs) {
   const db = context.cloudflare.env.DB_APP;
   const url = new URL(request.url);
   const tableName = url.searchParams.get("table");
+  const shouldDownload = url.searchParams.get("download") === "true";
 
+  // Se a requisição for para download, gera o CSV e retorna a resposta.
+  if (shouldDownload && tableName) {
+    try {
+      // Busca TODOS os dados da tabela, sem o limite de 10.
+      const allRowsStmt = db.prepare(`SELECT * FROM ${tableName}`);
+      const { results } = await allRowsStmt.all();
+      const allRows = results as Record<string, unknown>[];
+
+      const csv =
+        allRows && allRows.length > 0
+          ? convertToCSV(allRows)
+          : "Nenhum dado encontrado.";
+      
+      const headers = new Headers({
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${tableName}.csv"`,
+      });
+      return new Response(csv, { headers });
+    } catch (e) {
+      console.error(`Erro ao exportar a tabela '${tableName}':`, e);
+      return new Response("Erro ao exportar os dados da tabela.", { status: 500 });
+    }
+  }
+
+  // Lógica normal para renderizar a página do explorador de banco de dados.
   try {
-    // 1. Buscar a lista de todas as tabelas
     const tablesStmt = db.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
     );
@@ -30,10 +86,8 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     let rows: Record<string, unknown>[] | null = null;
     let queryError: string | null = null;
 
-    // 2. Se um nome de tabela for fornecido e válido, buscar seus detalhes
     if (tableName && tables.includes(tableName)) {
       try {
-        // PRAGMA é seguro aqui, pois validamos que `tableName` existe na lista de tabelas
         const schemaStmt = db.prepare(`PRAGMA table_info(${tableName})`);
         const { results: schemaResults } = await schemaStmt.all<TableSchema>();
         schema = schemaResults || [];
@@ -69,12 +123,16 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   }
 }
 
-/**
- * O componente React foi atualizado para renderizar as novas informações.
- */
 export default function DatabaseExplorer() {
-  const { connection, tables, error, selectedTable, schema, rows } =
-    useLoaderData() as Awaited<ReturnType<typeof loader>>;
+  const loaderData = useLoaderData() as Awaited<ReturnType<typeof loader>>;
+
+  // Type Guard: Se o loader retornou uma Response (para o download do CSV),
+  // este componente não renderiza. Esta verificação satisfaz o TypeScript.
+  if (loaderData instanceof Response) {
+    return null;
+  }
+
+  const { connection, tables, error, selectedTable, schema, rows } = loaderData;
 
   return (
     <main className="container mx-auto p-4 md:p-8 font-sans text-gray-800 dark:text-gray-100">
@@ -88,7 +146,6 @@ export default function DatabaseExplorer() {
       )}
 
       <div className="md:grid md:grid-cols-12 md:gap-8">
-        {/* Coluna da Lista de Tabelas */}
         <aside className="md:col-span-3 mb-8 md:mb-0">
           <h2 className="text-xl font-semibold mb-4 border-b pb-2 dark:border-gray-600">
             Tabelas
@@ -110,7 +167,6 @@ export default function DatabaseExplorer() {
           </nav>
         </aside>
 
-        {/* Coluna de Conteúdo Principal */}
         <div className="md:col-span-9">
           {!selectedTable ? (
             <div className="flex items-center justify-center h-64 bg-gray-50 dark:bg-gray-800 rounded-lg">
@@ -121,7 +177,7 @@ export default function DatabaseExplorer() {
           ) : (
             <div className="space-y-8">
               <SchemaTable schema={schema} />
-              <DataTable schema={schema} rows={rows} />
+              <DataTable schema={schema} rows={rows} selectedTable={selectedTable}/>
             </div>
           )}
         </div>
@@ -130,13 +186,13 @@ export default function DatabaseExplorer() {
   );
 }
 
-// Componentes auxiliares para manter o código principal limpo
+// --- Componentes Auxiliares ---
 
 function StatusMessage({ type, title, message }: { type: 'success' | 'error', title: string, message: string }) {
   const baseClasses = "border-l-4 p-4 rounded-md mb-6";
   const typeClasses = {
-    success: "bg-green-100 border-green-500 text-green-700",
-    error: "bg-red-100 border-red-500 text-red-700",
+    success: "bg-green-100 border-green-500 text-green-700 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700",
+    error: "bg-red-100 border-red-500 text-red-700 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700",
   };
   return (
     <div className={`${baseClasses} ${typeClasses[type]}`} role="alert">
@@ -193,13 +249,27 @@ function SchemaTable({ schema }: { schema: TableSchema[] | null }) {
   );
 }
 
-function DataTable({ schema, rows }: { schema: TableSchema[] | null, rows: Record<string, unknown>[] | null }) {
+function DataTable({ schema, rows, selectedTable }: { schema: TableSchema[] | null, rows: Record<string, unknown>[] | null, selectedTable: string | null }) {
   if (!schema || !rows) return null;
   const headers = schema.map(col => col.name);
 
   return (
     <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg overflow-hidden">
-      <h3 className="text-lg font-semibold p-4 border-b dark:border-gray-700">Amostra de Dados (Primeiros 10 Registros)</h3>
+        <div className="flex justify-between items-center p-4 border-b dark:border-gray-700">
+            <h3 className="text-lg font-semibold">Amostra de Dados (Primeiros 10 Registros)</h3>
+            {selectedTable && (
+                <a
+                    href={`/database?table=${selectedTable}&download=true`}
+                    download
+                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 9.707a1 1 0 011.414 0L9 11.086V3a1 1 0 112 0v8.086l1.293-1.379a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                    Download CSV
+                </a>
+            )}
+        </div>
       {rows.length === 0 ? (
          <p className="p-4 text-gray-500 dark:text-gray-400">Nenhum registro encontrado nesta tabela.</p>
       ) : (
@@ -216,7 +286,7 @@ function DataTable({ schema, rows }: { schema: TableSchema[] | null, rows: Recor
             </thead>
             <tbody>
               {rows.map((row, rowIndex) => (
-                <tr key={rowIndex}>
+                <tr key={rowIndex} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                   {headers.map((header, colIndex) => (
                     <td key={colIndex} className="px-5 py-3 border-b border-gray-200 dark:border-gray-600 text-sm font-mono whitespace-pre-wrap break-all">
                       {String(row[header] === null ? 'NULL' : row[header])}
