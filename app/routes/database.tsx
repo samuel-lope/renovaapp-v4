@@ -50,49 +50,51 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const tableName = url.searchParams.get("table");
   const shouldDownload = url.searchParams.get("download") === "true";
 
-  // Se a requisição for para download, gera o CSV e retorna a resposta.
-  if (shouldDownload && tableName) {
-    try {
-      // Busca TODOS os dados da tabela, sem o limite de 10.
-      const allRowsStmt = db.prepare(`SELECT * FROM ${tableName}`);
-      const { results } = await allRowsStmt.all();
-      const allRows = results as Record<string, unknown>[];
-
-      const csv =
-        allRows && allRows.length > 0
-          ? convertToCSV(allRows)
-          : "Nenhum dado encontrado.";
-      
-      const headers = new Headers({
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${tableName}.csv"`,
-      });
-      return new Response(csv, { headers });
-    } catch (e) {
-      console.error(`Erro ao exportar a tabela '${tableName}':`, e);
-      return new Response("Erro ao exportar os dados da tabela.", { status: 500 });
-    }
-  }
-
-  // Lógica normal para renderizar a página do explorador de banco de dados.
   try {
+    // Busca a lista de tabelas para validação em ambos os casos (render e download)
     const tablesStmt = db.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
     );
     const { results: tablesResults } = await tablesStmt.all<{ name: string }>();
     const tables = tablesResults ? tablesResults.map((row) => row.name) : [];
 
+    // Se a requisição for para download, gera o CSV e retorna a resposta.
+    if (shouldDownload && tableName) {
+      // Validação crucial: verifica se a tabela solicitada existe.
+      if (!tables.includes(tableName)) {
+        return new Response("Tabela não encontrada.", { status: 404 });
+      }
+
+      // Busca TODOS os dados da tabela, sem o limite de 10.
+      // Aspas duplas no nome da tabela para segurança.
+      const allRowsStmt = db.prepare(`SELECT * FROM "${tableName}"`);
+      const { results } = await allRowsStmt.all();
+      const allRows = results as Record<string, unknown>[];
+
+      const csv =
+        allRows.length > 0
+          ? convertToCSV(allRows)
+          : "Nenhum dado encontrado.";
+
+      const headers = new Headers({
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${tableName}.csv"`,
+      });
+      return new Response(csv, { headers });
+    }
+
+    // Lógica normal para renderizar a página do explorador de banco de dados.
     let schema: TableSchema[] | null = null;
     let rows: Record<string, unknown>[] | null = null;
     let queryError: string | null = null;
 
     if (tableName && tables.includes(tableName)) {
       try {
-        const schemaStmt = db.prepare(`PRAGMA table_info(${tableName})`);
+        const schemaStmt = db.prepare(`PRAGMA table_info("${tableName}")`);
         const { results: schemaResults } = await schemaStmt.all<TableSchema>();
         schema = schemaResults || [];
 
-        const rowsStmt = db.prepare(`SELECT * FROM ${tableName} LIMIT 10`);
+        const rowsStmt = db.prepare(`SELECT * FROM "${tableName}" LIMIT 10`);
         const { results: rowsResults } = await rowsStmt.all();
         rows = rowsResults as Record<string, unknown>[];
       } catch (e) {
@@ -126,14 +128,13 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 export default function DatabaseExplorer() {
   const loaderData = useLoaderData() as Awaited<ReturnType<typeof loader>>;
 
-  // Type Guard: Se o loader retornou uma Response (para o download do CSV),
-  // este componente não renderiza. Esta verificação satisfaz o TypeScript.
+  // Se o loader retornou uma Response (para o download do CSV), este componente não renderiza.
   if (loaderData instanceof Response) {
     return null;
   }
-
+  
   const { connection, tables, error, selectedTable, schema, rows } = loaderData;
-
+  
   return (
     <main className="container mx-auto p-4 md:p-8 font-sans text-gray-800 dark:text-gray-100">
       <h1 className="text-3xl font-bold mb-6">Database Explorer</h1>
@@ -260,7 +261,7 @@ function DataTable({ schema, rows, selectedTable }: { schema: TableSchema[] | nu
             {selectedTable && (
                 <a
                     href={`/database?table=${selectedTable}&download=true`}
-                    download
+                    download={`${selectedTable}.csv`}
                     className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
