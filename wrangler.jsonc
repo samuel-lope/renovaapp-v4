@@ -10,6 +10,13 @@
 	"vars": {
 		"VALUE_FROM_CLOUDFLARE": "Hello from Cloudflare"
 	},
+	"d1_databases": [
+    {
+      "binding": "DB_APP",
+      "database_name": "renova-db",
+      "database_id": "e65a5825-7bdc-41d3-a56d-f35b4c2dbc4b"
+    }
+  	],
 	"observability": {
 		"enabled": true
 	}
