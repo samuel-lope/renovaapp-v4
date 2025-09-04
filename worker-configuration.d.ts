@@ -4,9 +4,11 @@
 declare namespace Cloudflare {
 	interface Env {
 		VALUE_FROM_CLOUDFLARE: "Hello from Cloudflare";
+		DB_APP: D1Database;
 	}
 }
 interface Env extends Cloudflare.Env {}
+// ... existing code ...
 
 // Begin runtime types
 /*! *****************************************************************************
