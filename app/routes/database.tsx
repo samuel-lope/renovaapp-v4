@@ -59,7 +59,16 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       const tables = tablesResult?.results ? tablesResult.results.map((row) => row.name) : [];
       
       if (!tables.includes(tableName)) {
-        return new Response(`Error: Table "${tableName}" not found.`, { status: 404 });
+        // Return error as JSON instead of Response for consistent handling
+        return {
+          connection: "failed",
+          tables: [],
+          error: `Table "${tableName}" not found.`,
+          selectedTable: null,
+          schema: null,
+          rows: null,
+          isDownloadError: true
+        };
       }
 
       // Fetch all data from the validated table
@@ -79,7 +88,16 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     } catch (e) {
       console.error(`Error during CSV export for table '${tableName}':`, e);
       const errorMessage = e instanceof Error ? e.message : "An unknown error occurred.";
-      return new Response(`Failed to export CSV: ${errorMessage}`, { status: 500 });
+      // Return error as JSON instead of Response for consistent handling
+      return {
+        connection: "failed",
+        tables: [],
+        error: `Failed to export CSV: ${errorMessage}`,
+        selectedTable: null,
+        schema: null,
+        rows: null,
+        isDownloadError: true
+      };
     }
   }
 
@@ -121,6 +139,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       selectedTable: tableName,
       schema,
       rows,
+      isDownloadError: false
     };
 
   } catch (error) {
@@ -132,25 +151,35 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       selectedTable: null,
       schema: null,
       rows: null,
+      isDownloadError: false
     };
   }
 }
 
 export default function DatabaseExplorer() {
-  const loaderData = useLoaderData() as Awaited<ReturnType<typeof loader>>;
+  const loaderData = useLoaderData<typeof loader>();
 
+  // Check if the response is a download (Response object)
+  // In React Router v7, the loader should handle the Response properly
+  // but we need to ensure the component doesn't try to render it
   if (loaderData instanceof Response) {
+    // This shouldn't happen as React Router should handle Response objects
+    // but we keep it as a safety check
     return null;
   }
   
-  const { connection, tables, error, selectedTable, schema, rows } = loaderData;
+  const { connection, tables, error, selectedTable, schema, rows, isDownloadError } = loaderData;
   
   return (
     <main className="container mx-auto p-4 md:p-8 font-sans text-gray-800 dark:text-gray-100">
       <h1 className="text-3xl font-bold mb-6">Database Explorer</h1>
 
       {connection === "failed" && (
-        <StatusMessage type="error" title="Connection Failed." message={error || ""} />
+        <StatusMessage 
+          type="error" 
+          title={isDownloadError ? "Download Failed" : "Connection Failed"} 
+          message={error || ""} 
+        />
       )}
       {error && connection === "success" && (
         <StatusMessage type="error" title="Query Error" message={error} />
@@ -264,20 +293,54 @@ function DataTable({ schema, rows, selectedTable }: { schema: TableSchema[] | nu
   if (!schema || !rows) return null;
   const headers = schema.map(col => col.name);
 
+  // Function to handle download
+  const handleDownload = async () => {
+    if (!selectedTable) return;
+    
+    try {
+      // Make a fetch request to trigger the download
+      const response = await fetch(`/database?table=${selectedTable}&download=true`);
+      
+      if (!response.ok) {
+        throw new Error('Download failed');
+      }
+      
+      // Get the blob from the response
+      const blob = await response.blob();
+      
+      // Create a temporary URL for the blob
+      const url = window.URL.createObjectURL(blob);
+      
+      // Create a temporary anchor element and trigger download
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${selectedTable}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Download error:', error);
+      alert('Failed to download CSV file');
+    }
+  };
+
   return (
     <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg overflow-hidden">
         <div className="flex justify-between items-center p-4 border-b dark:border-gray-700">
             <h3 className="text-lg font-semibold">Data Sample (First 10 Records)</h3>
             {selectedTable && (
-                <a
-                    href={`/database?table=${selectedTable}&download=true`}
-                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                <button
+                    onClick={handleDownload}
+                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors cursor-pointer"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 9.707a1 1 0 011.414 0L9 11.086V3a1 1 0 112 0v8.086l1.293-1.379a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
                     </svg>
                     Download CSV
-                </a>
+                </button>
             )}
         </div>
       {rows.length === 0 ? (
