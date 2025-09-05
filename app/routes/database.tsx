@@ -52,7 +52,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     } else {
       try {
         const schemaStmt = db.prepare(`PRAGMA table_info("${tableName}")`);
-        const { results: schemaResults } = await schemaStmt.all<TableSchema>();
+        const { results: schemaResults } = await schemaStmt.all();
         schema = schemaResults || [];
 
         const rowsStmt = db.prepare(`SELECT * FROM "${tableName}" LIMIT 10`);
