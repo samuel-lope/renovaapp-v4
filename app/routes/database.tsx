@@ -53,7 +53,6 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   // --- Path 1: Handle CSV Download Request ---
   if (shouldDownload && tableName) {
     try {
-      // First, validate the table name to prevent errors or potential injection
       const tablesStmt = db.prepare("SELECT name FROM sqlite_master WHERE type='table'");
       const tablesResult = await tablesStmt.all<{ name: string }>();
       const tables = tablesResult?.results ? tablesResult.results.map((row) => row.name) : [];
@@ -62,12 +61,12 @@ export async function loader({ request, context }: Route.LoaderArgs) {
         return new Response(`Error: Table "${tableName}" not found.`, { status: 404 });
       }
 
-      // Fetch all data from the validated table
       const allRowsStmt = db.prepare(`SELECT * FROM "${tableName}"`);
       const allRowsResult = await allRowsStmt.all();
       const allRowsData = allRowsResult?.results as Record<string, unknown>[] || [];
 
-      const csv = convertToCSV(allRowsData);
+      // Add the UTF-8 BOM to ensure correct encoding in applications like Excel.
+      const csv = "\uFEFF" + convertToCSV(allRowsData);
 
       const headers = new Headers({
         "Content-Type": "text/csv; charset=utf-8",
@@ -96,7 +95,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
     if (tableName) {
         if (!tables.includes(tableName)) {
-            queryError = `Table "${tableName}" not found.`
+            queryError = `Tabela "${tableName}" não encontrada.`
         } else {
             try {
                 const schemaStmt = db.prepare(`PRAGMA table_info("${tableName}")`);
@@ -107,8 +106,8 @@ export async function loader({ request, context }: Route.LoaderArgs) {
                 const { results: rowsResults } = await rowsStmt.all();
                 rows = rowsResults as Record<string, unknown>[];
             } catch (e) {
-                queryError = e instanceof Error ? e.message : "An unknown error occurred while querying the table.";
-                console.error(`Error fetching data for table '${tableName}':`, e);
+                queryError = e instanceof Error ? e.message : "Ocorreu um erro desconhecido ao consultar a tabela.";
+                console.error(`Erro ao buscar dados da tabela '${tableName}':`, e);
             }
         }
     }
@@ -123,11 +122,11 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     };
 
   } catch (error) {
-    console.error("Database connection failed:", error);
+    console.error("Falha na conexão com o banco de dados:", error);
     return {
       connection: "failed",
       tables: [],
-      error: error instanceof Error ? error.message : "An unknown error occurred.",
+      error: error instanceof Error ? error.message : "Ocorreu um erro desconhecido.",
       selectedTable: null,
       schema: null,
       rows: null,
@@ -149,16 +148,16 @@ export default function DatabaseExplorer() {
       <h1 className="text-3xl font-bold mb-6">Database Explorer</h1>
 
       {connection === "failed" && (
-        <StatusMessage type="error" title="Connection Failed." message={error || ""} />
+        <StatusMessage type="error" title="Falha na Conexão." message={error || ""} />
       )}
       {error && connection === "success" && (
-        <StatusMessage type="error" title="Query Error" message={error} />
+        <StatusMessage type="error" title="Erro na Consulta" message={error} />
       )}
 
       <div className="md:grid md:grid-cols-12 md:gap-8">
         <aside className="md:col-span-3 mb-8 md:mb-0">
           <h2 className="text-xl font-semibold mb-4 border-b pb-2 dark:border-gray-600">
-            Tables
+            Tabelas
           </h2>
           <nav className="flex flex-col space-y-1">
             {tables && tables.length > 0 ? (
@@ -171,7 +170,7 @@ export default function DatabaseExplorer() {
               ))
             ) : (
               <p className="text-gray-500 dark:text-gray-400 italic">
-                No tables found.
+                Nenhuma tabela encontrada.
               </p>
             )}
           </nav>
@@ -181,7 +180,7 @@ export default function DatabaseExplorer() {
           {!selectedTable ? (
             <div className="flex items-center justify-center h-64 bg-gray-50 dark:bg-gray-800 rounded-lg">
               <p className="text-gray-500 dark:text-gray-400">
-                Select a table on the left to view details.
+                Selecione uma tabela à esquerda para ver os detalhes.
               </p>
             </div>
           ) : (
@@ -196,7 +195,7 @@ export default function DatabaseExplorer() {
   );
 }
 
-// --- Helper Components ---
+// --- Componentes Auxiliares ---
 
 function StatusMessage({ type, title, message }: { type: 'success' | 'error', title: string, message: string }) {
   const baseClasses = "border-l-4 p-4 rounded-md mb-6";
@@ -231,12 +230,12 @@ function SchemaTable({ schema }: { schema: TableSchema[] | null }) {
   if (!schema) return null;
   return (
     <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg overflow-hidden">
-      <h3 className="text-lg font-semibold p-4 border-b dark:border-gray-700">Table Schema</h3>
+      <h3 className="text-lg font-semibold p-4 border-b dark:border-gray-700">Esquema da Tabela</h3>
       <div className="overflow-x-auto">
         <table className="min-w-full leading-normal">
           <thead>
             <tr>
-              {['Column', 'Type', 'Not Null', 'Primary Key'].map((header) => (
+              {['Coluna', 'Tipo', 'Não Nulo', 'Chave Primária'].map((header) => (
                 <th key={header} className="px-5 py-3 border-b-2 border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">
                   {header}
                 </th>
@@ -248,8 +247,8 @@ function SchemaTable({ schema }: { schema: TableSchema[] | null }) {
               <tr key={col.name}>
                 <td className="px-5 py-3 border-b border-gray-200 dark:border-gray-600 text-sm font-mono">{col.name}</td>
                 <td className="px-5 py-3 border-b border-gray-200 dark:border-gray-600 text-sm font-mono">{col.type}</td>
-                <td className="px-5 py-3 border-b border-gray-200 dark:border-gray-600 text-sm text-center">{col.notnull ? 'Yes' : 'No'}</td>
-                <td className="px-5 py-3 border-b border-gray-200 dark:border-gray-600 text-sm text-center">{col.pk ? 'Yes' : 'No'}</td>
+                <td className="px-5 py-3 border-b border-gray-200 dark:border-gray-600 text-sm text-center">{col.notnull ? 'Sim' : 'Não'}</td>
+                <td className="px-5 py-3 border-b border-gray-200 dark:border-gray-600 text-sm text-center">{col.pk ? 'Sim' : 'Não'}</td>
               </tr>
             ))}
           </tbody>
@@ -266,11 +265,10 @@ function DataTable({ schema, rows, selectedTable }: { schema: TableSchema[] | nu
   return (
     <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg overflow-hidden">
         <div className="flex justify-between items-center p-4 border-b dark:border-gray-700">
-            <h3 className="text-lg font-semibold">Data Sample (First 10 Records)</h3>
+            <h3 className="text-lg font-semibold">Amostra de Dados (Primeiros 10 Registros)</h3>
             {selectedTable && (
                 <a
                     href={`/database?table=${selectedTable}&download=true`}
-                    download={`${selectedTable}.csv`}
                     className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
@@ -281,7 +279,7 @@ function DataTable({ schema, rows, selectedTable }: { schema: TableSchema[] | nu
             )}
         </div>
       {rows.length === 0 ? (
-         <p className="p-4 text-gray-500 dark:text-gray-400">No records found in this table.</p>
+         <p className="p-4 text-gray-500 dark:text-gray-400">Nenhum registro encontrado nesta tabela.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="min-w-full leading-normal">
