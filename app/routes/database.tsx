@@ -2,47 +2,12 @@ import { Link, useLoaderData } from "react-router";
 import { useState } from "react";
 import type { Route } from "./+types/database";
 
-// Define a interface para os dados do schema da tabela
+// Define the interface for table schema data
 interface TableSchema {
   name: string;
   type: string;
   notnull: number;
   pk: number;
-}
-
-/**
- * Converte um array de objetos em uma string no formato CSV.
- * @param data O array de objetos a ser convertido.
- * @returns Uma string formatada em CSV.
- */
-function convertToCSV(data: Record<string, unknown>[]): string {
-  if (!data || data.length === 0) {
-    return "";
-  }
-  const headers = Object.keys(data[0]);
-  const csvRows = [headers.join(",")]; // Linha de cabeçalho
-
-  for (const row of data) {
-    const values = headers.map((header) => {
-      const value = row[header];
-      let stringValue =
-        value === null || value === undefined ? "" : String(value);
-
-      // Escapa aspas duplas e envolve em aspas se o valor contiver vírgula, aspas ou quebra de linha.
-      if (
-        stringValue.includes('"') ||
-        stringValue.includes(",") ||
-        stringValue.includes("\n") ||
-        stringValue.includes("\r")
-      ) {
-        stringValue = `"${stringValue.replace(/"/g, '""')}"`;
-      }
-      return stringValue;
-    });
-    csvRows.push(values.join(","));
-  }
-
-  return csvRows.join("\n");
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
@@ -51,7 +16,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const tableName = url.searchParams.get("table");
   const shouldDownload = url.searchParams.get("download") === "true";
 
-  // Etapa 1: Obter a lista de tabelas. Isso é comum a ambos os caminhos.
+  // Step 1: Get the list of tables. This is common to both paths.
   let tables: string[];
   try {
     const tablesStmt = db.prepare(
@@ -60,21 +25,21 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     const { results: tablesResults } = await tablesStmt.all<{ name: string }>();
     tables = tablesResults ? tablesResults.map((row) => row.name) : [];
   } catch (error) {
-    console.error("Falha na conexão/consulta com o banco de dados:", error);
+    console.error("Database connection/query failed:", error);
     return {
       connection: "failed",
       tables: [],
-      error: error instanceof Error ? error.message : "Ocorreu um erro desconhecido.",
+      error: error instanceof Error ? error.message : "An unknown error occurred.",
       selectedTable: null,
       schema: null,
       rows: null,
     };
   }
 
-  // Etapa 2: Lidar com a solicitação de download de CSV (chamada via fetch)
+  // Step 2: Handle the JSON download request (called via fetch)
   if (shouldDownload) {
     if (!tableName || !tables.includes(tableName)) {
-      return new Response(`Erro: Tabela "${tableName || ''}" não encontrada ou não especificada.`, { status: 404 });
+      return new Response(`Error: Table "${tableName || ''}" not found or not specified.`, { status: 404 });
     }
 
     try {
@@ -82,28 +47,29 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       const allRowsResult = await allRowsStmt.all();
       const allRowsData = (allRowsResult?.results as Record<string, unknown>[]) || [];
 
-      const csv = "\uFEFF" + convertToCSV(allRowsData);
+      // Convert data to a pretty-printed JSON string
+      const json = JSON.stringify(allRowsData, null, 2);
 
       const headers = new Headers({
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${tableName}.csv"`,
+        "Content-Type": "application/json",
+        "Content-Disposition": `attachment; filename="${tableName}.json"`,
       });
-      return new Response(csv, { headers });
+      return new Response(json, { headers });
     } catch (e) {
-      console.error(`Erro durante a exportação do CSV para a tabela '${tableName}':`, e);
-      const errorMessage = e instanceof Error ? e.message : "Ocorreu um erro desconhecido.";
-      return new Response(`Falha ao exportar CSV: ${errorMessage}`, { status: 500 });
+      console.error(`Error during JSON export for table '${tableName}':`, e);
+      const errorMessage = e instanceof Error ? e.message : "An unknown error occurred.";
+      return new Response(`Failed to export JSON: ${errorMessage}`, { status: 500 });
     }
   }
 
-  // Etapa 3: Lidar com a renderização da página HTML
+  // Step 3: Handle the HTML page render request
   let schema: TableSchema[] | null = null;
   let rows: Record<string, unknown>[] | null = null;
   let queryError: string | null = null;
 
   if (tableName) {
     if (!tables.includes(tableName)) {
-      queryError = `Tabela "${tableName}" não encontrada.`;
+      queryError = `Table "${tableName}" not found.`;
     } else {
       try {
         const schemaStmt = db.prepare(`PRAGMA table_info("${tableName}")`);
@@ -114,8 +80,8 @@ export async function loader({ request, context }: Route.LoaderArgs) {
         const { results: rowsResults } = await rowsStmt.all();
         rows = (rowsResults as Record<string, unknown>[]) || [];
       } catch (e) {
-        queryError = e instanceof Error ? e.message : "Ocorreu um erro desconhecido ao consultar a tabela.";
-        console.error(`Erro ao buscar dados da tabela '${tableName}':`, e);
+        queryError = e instanceof Error ? e.message : "An unknown error occurred while querying the table.";
+        console.error(`Error fetching data for table '${tableName}':`, e);
       }
     }
   }
@@ -144,10 +110,10 @@ export default function DatabaseExplorer() {
       <h1 className="text-3xl font-bold mb-6">Database Explorer</h1>
 
       {connection === "failed" && (
-        <StatusMessage type="error" title="Falha na Conexão." message={error || ""} />
+        <StatusMessage type="error" title="Connection Failed." message={error || ""} />
       )}
       {error && connection === "success" && (
-        <StatusMessage type="error" title="Erro na Consulta" message={error} />
+        <StatusMessage type="error" title="Query Error" message={error} />
       )}
 
       <div className="md:grid md:grid-cols-12 md:gap-8">
@@ -191,7 +157,7 @@ export default function DatabaseExplorer() {
   );
 }
 
-// --- Componentes Auxiliares ---
+// --- Helper Components ---
 
 function StatusMessage({ type, title, message }: { type: 'success' | 'error', title: string, message: string }) {
   const baseClasses = "border-l-4 p-4 rounded-md mb-6";
@@ -266,25 +232,24 @@ function DataTable({ schema, rows, selectedTable }: { schema: TableSchema[] | nu
       const response = await fetch(`/database?table=${selectedTable}&download=true`);
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(errorText || `Falha no download. O servidor respondeu com o status ${response.status}`);
+        throw new Error(errorText || `Download failed. Server responded with status ${response.status}`);
       }
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${selectedTable}.csv`;
+      a.download = `${selectedTable}.json`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Download failed:", error);
-      setDownloadError(error instanceof Error ? error.message : "Ocorreu um erro desconhecido.");
+      setDownloadError(error instanceof Error ? error.message : "An unknown error occurred.");
     } finally {
       setIsDownloading(false);
     }
   };
-
 
   if (!schema || !rows) return null;
   const headers = schema.map(col => col.name);
@@ -302,11 +267,11 @@ function DataTable({ schema, rows, selectedTable }: { schema: TableSchema[] | nu
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 9.707a1 1 0 011.414 0L9 11.086V3a1 1 0 112 0v8.086l1.293-1.379a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
                     </svg>
-                    {isDownloading ? 'Baixando...' : 'Download CSV'}
+                    {isDownloading ? 'Baixando...' : 'Download JSON'}
                 </button>
             )}
         </div>
-      {downloadError && <div className="p-4 bg-red-100 text-red-700">{downloadError}</div>}
+      {downloadError && <div className="p-4 bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300">{downloadError}</div>}
       {rows.length === 0 ? (
          <p className="p-4 text-gray-500 dark:text-gray-400">Nenhum registro encontrado nesta tabela.</p>
       ) : (
