@@ -1,7 +1,7 @@
 import { Link, useLoaderData } from "react-router";
 import type { Route } from "./+types/database";
 
-// Define the interface for table schema data
+// Define a interface para os dados do schema da tabela
 interface TableSchema {
   name: string;
   type: string;
@@ -10,16 +10,16 @@ interface TableSchema {
 }
 
 /**
- * Converts an array of objects into a CSV formatted string.
- * @param data The array of objects to convert.
- * @returns A string in CSV format.
+ * Converte um array de objetos em uma string no formato CSV.
+ * @param data O array de objetos a ser convertido.
+ * @returns Uma string formatada em CSV.
  */
 function convertToCSV(data: Record<string, unknown>[]): string {
   if (!data || data.length === 0) {
     return "";
   }
   const headers = Object.keys(data[0]);
-  const csvRows = [headers.join(",")]; // Header row
+  const csvRows = [headers.join(",")]; // Linha de cabeçalho
 
   for (const row of data) {
     const values = headers.map((header) => {
@@ -27,7 +27,7 @@ function convertToCSV(data: Record<string, unknown>[]): string {
       let stringValue =
         value === null || value === undefined ? "" : String(value);
 
-      // Escape double quotes and wrap in quotes if the value contains a comma, quote, or newline.
+      // Escapa aspas duplas e envolve em aspas se o valor contiver vírgula, aspas ou quebra de linha.
       if (
         stringValue.includes('"') ||
         stringValue.includes(",") ||
@@ -50,79 +50,16 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const tableName = url.searchParams.get("table");
   const shouldDownload = url.searchParams.get("download") === "true";
 
-  // --- Path 1: Handle CSV Download Request ---
-  if (shouldDownload && tableName) {
-    try {
-      const tablesStmt = db.prepare("SELECT name FROM sqlite_master WHERE type='table'");
-      const tablesResult = await tablesStmt.all<{ name: string }>();
-      const tables = tablesResult?.results ? tablesResult.results.map((row) => row.name) : [];
-      
-      if (!tables.includes(tableName)) {
-        return new Response(`Error: Table "${tableName}" not found.`, { status: 404 });
-      }
-
-      const allRowsStmt = db.prepare(`SELECT * FROM "${tableName}"`);
-      const allRowsResult = await allRowsStmt.all();
-      const allRowsData = allRowsResult?.results as Record<string, unknown>[] || [];
-
-      // Add the UTF-8 BOM to ensure correct encoding in applications like Excel.
-      const csv = "\uFEFF" + convertToCSV(allRowsData);
-
-      const headers = new Headers({
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${tableName}.csv"`,
-      });
-      return new Response(csv, { headers });
-
-    } catch (e) {
-      console.error(`Error during CSV export for table '${tableName}':`, e);
-      const errorMessage = e instanceof Error ? e.message : "An unknown error occurred.";
-      return new Response(`Failed to export CSV: ${errorMessage}`, { status: 500 });
-    }
-  }
-
-  // --- Path 2: Handle HTML Page Render Request ---
+  // Etapa 1: Obter a lista de tabelas. Isso é comum a ambos os caminhos.
+  let tables: string[];
   try {
     const tablesStmt = db.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
     );
     const { results: tablesResults } = await tablesStmt.all<{ name: string }>();
-    const tables = tablesResults ? tablesResults.map((row) => row.name) : [];
-
-    let schema: TableSchema[] | null = null;
-    let rows: Record<string, unknown>[] | null = null;
-    let queryError: string | null = null;
-
-    if (tableName) {
-        if (!tables.includes(tableName)) {
-            queryError = `Tabela "${tableName}" não encontrada.`
-        } else {
-            try {
-                const schemaStmt = db.prepare(`PRAGMA table_info("${tableName}")`);
-                const { results: schemaResults } = await schemaStmt.all<TableSchema>();
-                schema = schemaResults || [];
-
-                const rowsStmt = db.prepare(`SELECT * FROM "${tableName}" LIMIT 10`);
-                const { results: rowsResults } = await rowsStmt.all();
-                rows = rowsResults as Record<string, unknown>[];
-            } catch (e) {
-                queryError = e instanceof Error ? e.message : "Ocorreu um erro desconhecido ao consultar a tabela.";
-                console.error(`Erro ao buscar dados da tabela '${tableName}':`, e);
-            }
-        }
-    }
-    
-    return {
-      connection: "success",
-      tables,
-      error: queryError,
-      selectedTable: tableName,
-      schema,
-      rows,
-    };
-
+    tables = tablesResults ? tablesResults.map((row) => row.name) : [];
   } catch (error) {
-    console.error("Falha na conexão com o banco de dados:", error);
+    console.error("Falha na conexão/consulta com o banco de dados:", error);
     return {
       connection: "failed",
       tables: [],
@@ -132,7 +69,66 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       rows: null,
     };
   }
+
+  // Etapa 2: Lidar com a solicitação de download de CSV
+  if (shouldDownload) {
+    if (!tableName || !tables.includes(tableName)) {
+      return new Response(`Erro: Tabela "${tableName || ''}" não encontrada ou não especificada.`, { status: 404 });
+    }
+
+    try {
+      const allRowsStmt = db.prepare(`SELECT * FROM "${tableName}"`);
+      const allRowsResult = await allRowsStmt.all();
+      const allRowsData = (allRowsResult?.results as Record<string, unknown>[]) || [];
+
+      const csv = "\uFEFF" + convertToCSV(allRowsData);
+
+      const headers = new Headers({
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${tableName}.csv"`,
+      });
+      return new Response(csv, { headers });
+    } catch (e) {
+      console.error(`Erro durante a exportação do CSV para a tabela '${tableName}':`, e);
+      const errorMessage = e instanceof Error ? e.message : "Ocorreu um erro desconhecido.";
+      return new Response(`Falha ao exportar CSV: ${errorMessage}`, { status: 500 });
+    }
+  }
+
+  // Etapa 3: Lidar com a renderização da página HTML
+  let schema: TableSchema[] | null = null;
+  let rows: Record<string, unknown>[] | null = null;
+  let queryError: string | null = null;
+
+  if (tableName) {
+    if (!tables.includes(tableName)) {
+      queryError = `Tabela "${tableName}" não encontrada.`;
+    } else {
+      try {
+        const schemaStmt = db.prepare(`PRAGMA table_info("${tableName}")`);
+        const { results: schemaResults } = await schemaStmt.all<TableSchema>();
+        schema = schemaResults || [];
+
+        const rowsStmt = db.prepare(`SELECT * FROM "${tableName}" LIMIT 10`);
+        const { results: rowsResults } = await rowsStmt.all();
+        rows = (rowsResults as Record<string, unknown>[]) || [];
+      } catch (e) {
+        queryError = e instanceof Error ? e.message : "Ocorreu um erro desconhecido ao consultar a tabela.";
+        console.error(`Erro ao buscar dados da tabela '${tableName}':`, e);
+      }
+    }
+  }
+
+  return {
+    connection: "success",
+    tables,
+    error: queryError,
+    selectedTable: tableName,
+    schema,
+    rows,
+  };
 }
+
 
 export default function DatabaseExplorer() {
   const loaderData = useLoaderData() as Awaited<ReturnType<typeof loader>>;
