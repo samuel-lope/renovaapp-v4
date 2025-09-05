@@ -1,5 +1,6 @@
 // File: app/routes/login.tsx
 import { Form, useActionData, useNavigation } from "react-router";
+// Corrected import for server-side utilities
 import { json, redirect } from "react-router/server";
 import type { ActionFunctionArgs, MetaFunction } from "react-router";
 import { getSession, commitSession } from "~/session";
@@ -36,8 +37,6 @@ export async function action({ request, context }: ActionFunctionArgs) {
          WHERE u.matricula = ? AND u.st_usuario = 1 AND u.st_delete = 0`
     ).bind(matricula);
     
-    // Corrected the untyped function call by removing the generic
-    // and asserting the type on the result.
     const user = await userStmt.first() as UserQueryResult | null;
 
     // SECURITY WARNING: Plain text password comparison.
@@ -107,9 +106,10 @@ export default function LoginPage() {
               className="w-full px-3 py-2 mt-1 text-gray-900 bg-gray-100 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white dark:border-gray-600"
             />
           </div>
-          {actionData && 'error' in actionData && (
+          {/* This type guard ensures actionData and actionData.error exist before access */}
+          {actionData && "error" in actionData && (
             <p className="text-sm text-red-500" role="alert">
-              {actionData.error}
+              {actionData.error as string}
             </p>
           )}
           <button
