@@ -1,64 +1,37 @@
 // File: app/routes/login.tsx
 import { Form, useActionData, useNavigation } from "react-router";
-// Corrected import for server-side utilities
-import { json, redirect } from "@react-router/node";
-import type { ActionFunctionArgs, MetaFunction } from "react-router";
-import { getSession, commitSession } from "~/session";
+import type { ActionFunctionArgs, MetaFunction, LoaderFunctionArgs } from "react-router";
+import { getSession } from "~/auth.server";
+import { login } from "~/auth.server";
+// Utilitários agnósticos de runtime agora vêm de 'react-router'
+import { redirect } from "react-router";
 
-// Define an interface for the user data structure from the database
-interface UserQueryResult {
-  idtb_usuario: number;
-  nome_usuario: string;
-  senha: string;
-  ds_perfil: string;
-}
+export const meta: MetaFunction = () => [{ title: "Login - RENOVAAPP" }];
 
-export const meta: MetaFunction = () => {
-  return [{ title: "Login - RENOVAAPP" }];
-};
-
-// Action to handle the login form submission
-export async function action({ request, context }: ActionFunctionArgs) {
+export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getSession(request.headers.get("Cookie"));
-  const formData = await request.formData();
-  const matricula = formData.get("matricula");
-  const senha = formData.get("senha");
-
-  if (typeof matricula !== "string" || typeof senha !== "string" || !matricula || !senha) {
-    return json({ error: "Matrícula e senha são obrigatórios." }, { status: 400 });
+  if (session.has("userId")) {
+    return redirect("/");
   }
-
-  const db = context.cloudflare.env.DB_APP;
-  try {
-    const userStmt = db.prepare(
-        `SELECT u.idtb_usuario, u.nome_usuario, u.senha, p.ds_perfil 
-         FROM tb_usuario u 
-         LEFT JOIN tb_perfil p ON u.tb_perfil_idtb_perfil = p.idtb_perfil
-         WHERE u.matricula = ? AND u.st_usuario = 1 AND u.st_delete = 0`
-    ).bind(matricula);
-    
-    const user = await userStmt.first() as UserQueryResult | null;
-
-    // SECURITY WARNING: Plain text password comparison.
-    // In a real production environment, you MUST hash passwords and compare the hashes.
-    if (!user || user.senha !== senha) {
-      return json({ error: "Matrícula ou senha inválida." }, { status: 401 });
-    }
-
-    session.set("userId", user.idtb_usuario);
-    session.set("userName", user.nome_usuario);
-    session.set("userProfile", user.ds_perfil);
-
-    return redirect("/", {
-      headers: {
-        "Set-Cookie": await commitSession(session),
-      },
-    });
-  } catch (dbError) {
-    console.error("Database error during login:", dbError);
-    return json({ error: "Ocorreu um erro no servidor. Tente novamente." }, { status: 500 });
-  }
+  return null;
 }
+
+type LoginActionData = { error?: string } | null;
+
+export async function action({ request, context }: ActionFunctionArgs): Promise<LoginActionData> {
+  const formData = await request.formData();
+  const matricula = formData.get("matricula") as string;
+  const senha = formData.get("senha") as string;
+  
+  // Assume login returns TypedResponse<{ error?: string }> or null
+  const response = await login(context.cloudflare.env.DB_APP, matricula, senha);
+  if (response && typeof response.json === "function") {
+    const data = await response.json();
+    return data as LoginActionData;
+  }
+  return null;
+}
+
 
 // Login form component
 export default function LoginPage() {

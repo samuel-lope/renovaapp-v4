@@ -2,7 +2,6 @@
 {
   "extends": "./tsconfig.json",
   "include": [
-    // Garante que o diretório de tipos gerado seja incluído
     ".react-router/types/**/*",
     "app/**/*",
     "workers/**/*",
@@ -12,16 +11,15 @@
     "composite": true,
     "strict": true,
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
-    "types": ["vite/client", "node"],
+    // Adicione "@cloudflare/workers-types" a este array
+    "types": ["vite/client", "node", "@cloudflare/workers-types"],
     "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "baseUrl": ".",
-    // A chave está aqui: tratar '.' (raiz) e os tipos gerados como raízes de código
     "rootDirs": [".", "./.react-router/types"],
     "paths": {
-      // O alias continua o mesmo
       "~/*": ["./app/*"]
     },
     "esModuleInterop": true,

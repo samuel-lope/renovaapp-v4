@@ -1,41 +1,34 @@
 // File: app/routes/admin.tsx
 import { Form, useLoaderData, useNavigation, Link } from "react-router";
-import { json, redirect } from "@react-router/node";
+import { redirect } from "@remix-run/cloudflare";
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
-import { getSession } from "~/session";
+import { getSession } from "~/auth.server";
 
-// Define an interface for the profile data structure
+// ... (interface Profile e meta function permanecem as mesmas) ...
 interface Profile {
     idtb_perfil: number;
     ds_perfil: string;
 }
 
-export const meta: MetaFunction = () => {
-    return [{ title: "Admin - RENOVAAPP" }];
-};
+export const meta: MetaFunction = () => [{ title: "Admin - RENOVAAPP" }];
 
-// Loader to protect the route and fetch data
 export async function loader({ request, context }: LoaderFunctionArgs) {
     const session = await getSession(request.headers.get("Cookie"));
-    
-    // Authorization check
     if (session.get("userProfile") !== "Administrador") {
-        return redirect("/");
+        // Instead of redirect, return an object with empty profiles and error
+        return { profiles: [], error: "Unauthorized" };
     }
 
     const db = context.cloudflare.env.DB_APP;
     const profilesStmt = db.prepare("SELECT idtb_perfil, ds_perfil FROM tb_perfil ORDER BY ds_perfil");
     
     try {
-        // Remove the generic from the .all() call
         const { results } = await profilesStmt.all();
-        // Assert the type of the results after fetching
         const profiles = (results || []) as Profile[];
-        
-        return json({ profiles });
+        return { profiles };
     } catch (error) {
-        console.error("Failed to load admin data:", error);
-        return json({ profiles: [], error: "Falha ao carregar dados." });
+        console.error("Falha ao carregar dados de admin:", error);
+        return { profiles: [], error: "Falha ao carregar dados." };
     }
 }
 
@@ -64,12 +57,12 @@ export async function action({ request, context }: ActionFunctionArgs) {
         console.error("Admin action failed:", e);
     }
     
-    return json({ ok: true });
+    return { ok: true };
 }
 
 
 export default function AdminPage() {
-    const { profiles, error } = useLoaderData() as Awaited<ReturnType<typeof loader>>;
+    const { profiles, error } = useLoaderData() as { profiles: Profile[]; error?: string };
     const navigation = useNavigation();
     const isSubmitting = navigation.state === "submitting";
 

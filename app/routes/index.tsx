@@ -1,55 +1,40 @@
 // File: app/routes/index.tsx
 import { Form, useLoaderData } from "react-router";
-// Corrected import for server-side utilities
-import { json, redirect } from "@react-router/node"; 
 import type { LoaderFunctionArgs, MetaFunction } from "react-router";
-import { getSession } from "~/session";
+import { getSession, requireUserId } from "~/auth.server";
 
-// Define an interface for the module data structure
+// ... (interface AppModule e meta function permanecem as mesmas) ...
 interface AppModule {
   id_modulo: number;
   ds_modulo: string;
-  nome_modulo: string;
-  tipo_modulo: string;
 }
 
-export const meta: MetaFunction = () => {
-  return [{ title: "Página Inicial - RENOVAAPP" }];
-};
+export const meta: MetaFunction = () => [{ title: "Página Inicial - RENOVAAPP" }];
 
-// Protect the route and load user-specific modules
 export async function loader({ request, context }: LoaderFunctionArgs) {
+  await requireUserId(request); // Protege a rota
   const session = await getSession(request.headers.get("Cookie"));
-  if (!session.has("userId")) {
-    return redirect("/login");
-  }
 
-  const userId = session.get("userId");
   const userName = session.get("userName") || "Usuário";
   const userProfile = session.get("userProfile");
 
-  // Fetch modules the user has permission to see
+  // ... (a lógica do banco de dados permanece a mesma) ...
   const db = context.cloudflare.env.DB_APP;
   const stmt = db.prepare(
-    `SELECT m.id_modulo, m.ds_modulo, m.nome_modulo, m.tipo_modulo
-     FROM tb_modulo m
+    `SELECT m.id_modulo, m.ds_modulo FROM tb_modulo m
      JOIN tb_permissao p ON m.id_modulo = p.id_modulo
      JOIN tb_usuario u ON p.id_perfil = u.tb_perfil_idtb_perfil
-     WHERE u.idtb_usuario = ?`
-  ).bind(userId);
+     WHERE u.idtb_usuario = ? AND m.tipo_modulo = 'app'`
+  ).bind(session.get("userId"));
   
-  // 1. Remove the generic from the .all() call
   const { results } = await stmt.all();
+  const appModules = (results || []) as AppModule[];
 
-  // 2. Assert the type of the results after fetching them
-  const modules = (results || []) as AppModule[];
-
-  return json({
+  return {
     userName,
     isAdmin: userProfile === "Administrador",
-    // 3. Use the correctly typed variable in the filter
-    appModules: modules.filter(m => m.tipo_modulo === 'app'),
-  });
+    appModules,
+  };
 }
 
 export default function Index() {

@@ -2,6 +2,13 @@ import { Link, useLoaderData } from "react-router";
 import { useState } from "react";
 import type { Route } from "./+types/database";
 
+// Extend Env type to include DB_APP
+declare global {
+  interface Env {
+    DB_APP: any; // Replace 'any' with the actual type if known (e.g., D1Database)
+  }
+}
+
 // Define the interface for table schema data
 interface TableSchema {
   name: string;
@@ -21,7 +28,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     const tablesStmt = db.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
     );
-    const { results: tablesResults } = await tablesStmt.all<{ name: string }>();
+    const { results: tablesResults } = await tablesStmt.all() as { results: { name: string }[] };
     tables = tablesResults ? tablesResults.map((row) => row.name) : [];
   } catch (error) {
     console.error("Database connection/query failed:", error);
