@@ -1,5 +1,5 @@
 // File: app/session.ts
-import { createCookieSessionStorage } from "react-router/server";
+import { createCookieSessionStorage } from "@react-router/node";
 
 // IMPORTANTE: A variável de ambiente SESSION_SECRET é essencial para a segurança.
 // Para desenvolvimento local, crie um arquivo .dev.vars na raiz do projeto e adicione:

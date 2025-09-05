@@ -1,10 +1,10 @@
+// File: tsconfig.cloudflare.json
 {
   "extends": "./tsconfig.json",
   "include": [
+    // Garante que o diretório de tipos gerado seja incluído
     ".react-router/types/**/*",
     "app/**/*",
-    "app/**/.server/**/*",
-    "app/**/.client/**/*",
     "workers/**/*",
     "worker-configuration.d.ts"
   ],
@@ -18,8 +18,10 @@
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "baseUrl": ".",
+    // A chave está aqui: tratar '.' (raiz) e os tipos gerados como raízes de código
     "rootDirs": [".", "./.react-router/types"],
     "paths": {
+      // O alias continua o mesmo
       "~/*": ["./app/*"]
     },
     "esModuleInterop": true,
@@ -27,3 +29,4 @@
     "skipLibCheck": true
   }
 }
+

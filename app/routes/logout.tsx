@@ -1,6 +1,6 @@
 // File: app/routes/logout.tsx
 import type { ActionFunctionArgs } from "react-router";
-import { redirect } from "react-router/server";
+import { redirect } from "@react-router/node";
 import { destroySession, getSession } from "~/session";
 
 export async function action({ request }: ActionFunctionArgs) {

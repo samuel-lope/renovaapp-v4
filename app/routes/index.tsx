@@ -1,7 +1,7 @@
 // File: app/routes/index.tsx
 import { Form, useLoaderData } from "react-router";
 // Corrected import for server-side utilities
-import { json, redirect } from "react-router/server"; 
+import { json, redirect } from "@react-router/node"; 
 import type { LoaderFunctionArgs, MetaFunction } from "react-router";
 import { getSession } from "~/session";
 

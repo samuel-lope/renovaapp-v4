@@ -1,6 +1,6 @@
 // File: app/routes/admin.tsx
 import { Form, useLoaderData, useNavigation, Link } from "react-router";
-import { json, redirect } from "react-router/server";
+import { json, redirect } from "@react-router/node";
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "react-router";
 import { getSession } from "~/session";
 

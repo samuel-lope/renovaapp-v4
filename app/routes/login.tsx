@@ -1,7 +1,7 @@
 // File: app/routes/login.tsx
 import { Form, useActionData, useNavigation } from "react-router";
 // Corrected import for server-side utilities
-import { json, redirect } from "react-router/server";
+import { json, redirect } from "@react-router/node";
 import type { ActionFunctionArgs, MetaFunction } from "react-router";
 import { getSession, commitSession } from "~/session";
 
